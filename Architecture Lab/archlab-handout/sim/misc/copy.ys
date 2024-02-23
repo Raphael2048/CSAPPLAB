@@ -1,0 +1,44 @@
+
+# Execution begins at address 0 
+    .pos 0
+    irmovq stack, %rsp  	# Set up stack pointer  
+    call main		# Execute main program
+    halt			# Terminate program 
+
+.align 8
+src:
+    .quad 0x00a
+    .quad 0x0b0
+    .quad 0xc00
+dest:
+    .quad 0x111
+    .quad 0x222
+    .quad 0x333
+
+main:
+    irmovq src, %rdi
+    irmovq dest, %rsi
+    irmovq $3, %rbp
+	call copy
+	ret 
+
+copy:
+    irmovq $8, %r8
+    irmovq $0, %r9
+    irmovq $1, %r11
+    xorq %rax, %rax
+loop:
+    subq %r9, %rbp
+    jle end
+    mrmovq (%rdi), %r10
+    xorq %r10, %rax
+    rmmovq %r10, (%rsi)
+    addq %r8, %rdi
+    addq %r8, %rsi
+    subq %r11, %rbp
+    jmp loop
+end:
+    ret
+.pos 0x200
+stack:
+    
