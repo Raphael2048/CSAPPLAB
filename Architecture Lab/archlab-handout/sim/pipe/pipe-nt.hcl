@@ -139,7 +139,8 @@ wordsig W_valM  'mem_wb_curr->valm'	# Memory M value
 ## What address should instruction be fetched at
 word f_pc = [
 	# Mispredicted branch.  Fetch at incremented PC
-	M_icode == IJXX && !M_Cnd : M_valA;
+	# M_icode == IJXX && !M_Cnd : M_valA;
+	M_icode == IJXX && M_ifun != UNCOND && M_Cnd : M_valE;
 	# Completion of RET instruction
 	W_icode == IRET : W_valM;
 	# Default: Use predicted value of PC
@@ -183,7 +184,9 @@ bool need_valC =
 # Predict next value of PC
 word f_predPC = [
 	# BNT: This is where you'll change the branch prediction rule
-	f_icode in { IJXX, ICALL } : f_valC;
+	# f_icode in { IJXX, ICALL } : f_valC;
+	f_icode == ICALL : f_valC;
+	f_icode == IJXX && f_ifun == UNCOND : f_valC;
 	1 : f_valP;
 ];
 
@@ -247,7 +250,7 @@ word d_valB = [
 ## Select input A to ALU
 word aluA = [
 	E_icode in { IRRMOVQ, IOPQ } : E_valA;
-	E_icode in { IIRMOVQ, IRMMOVQ, IMRMOVQ } : E_valC;
+	E_icode in { IIRMOVQ, IRMMOVQ, IMRMOVQ, IJXX } : E_valC;
 	E_icode in { ICALL, IPUSHQ } : -8;
 	E_icode in { IRET, IPOPQ } : 8;
 	# Other instructions don't need ALU
@@ -257,7 +260,7 @@ word aluA = [
 word aluB = [
 	E_icode in { IRMMOVQ, IMRMOVQ, IOPQ, ICALL, 
 		     IPUSHQ, IRET, IPOPQ } : E_valB;
-	E_icode in { IRRMOVQ, IIRMOVQ } : 0;
+	E_icode in { IRRMOVQ, IIRMOVQ, IJXX } : 0;
 	# Other instructions don't need ALU
 ];
 
@@ -343,7 +346,7 @@ bool D_stall =
 
 bool D_bubble =
 	# Mispredicted branch
-	(E_icode == IJXX && !e_Cnd) ||
+	(E_icode == IJXX && E_ifun != UNCOND  && e_Cnd) ||
 	# Stalling at fetch while ret passes through pipeline
 	# but not condition for a load/use hazard
 	!(E_icode in { IMRMOVQ, IPOPQ } && E_dstM in { d_srcA, d_srcB }) &&
@@ -354,7 +357,7 @@ bool D_bubble =
 bool E_stall = 0;
 bool E_bubble =
 	# Mispredicted branch
-	(E_icode == IJXX && !e_Cnd) ||
+	(E_icode == IJXX && E_ifun != UNCOND  && e_Cnd) ||
 	# Conditions for a load/use hazard
 	E_icode in { IMRMOVQ, IPOPQ } &&
 	 E_dstM in { d_srcA, d_srcB};
