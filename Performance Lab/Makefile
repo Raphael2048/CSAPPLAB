@@ -4,7 +4,7 @@ VERSION = 1
 HANDINDIR = 
 
 CC = gcc
-CFLAGS = -Wall -O2 -m32
+CFLAGS = -Wall -O2 -m32 -I/usr/include/x86_64-linux-gnu
 LIBS = -lm
 
 OBJS = driver.o kernels.o fcyc.o clock.o

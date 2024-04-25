@@ -10,7 +10,7 @@
  * Please fill in the following team struct 
  */
 team_t team = {
-    "bovik",              /* Team name */
+    "team",              /* Team name */
 
     "Harry Q. Bovik",     /* First member full name */
     "bovik@nowhere.edu",  /* First member email address */
@@ -47,7 +47,45 @@ void naive_rotate(int dim, pixel *src, pixel *dst)
 char rotate_descr[] = "rotate: Current working version";
 void rotate(int dim, pixel *src, pixel *dst) 
 {
-    naive_rotate(dim, src, dst);
+    int i, j;
+	for (j = 0; j < dim; j++)
+    for (i = 0; i < dim; i++)
+	    dst[RIDX(dim-1-j, i, dim)] = src[RIDX(i, j, dim)];
+}
+
+void rotate2(int dim, pixel *src, pixel *dst) 
+{
+	for (int j = 0; j < dim; j++)
+    {
+        int sd = RIDX(0, j, dim);
+        int dd = RIDX(dim-1-j, 0, dim);
+        for (int i = 0; i < dim; i++)
+        {
+            dst[dd] = src[sd];
+            sd += dim;
+            dd += 1;
+        }
+    }
+}
+
+void rotate3(int dim, pixel *src, pixel *dst) 
+{
+	for (int j = 0; j < dim; j++)
+    {
+        for (int i = 0; i < dim; i+=8)
+        {
+            int sd = RIDX(i, j, dim);
+            int dd = RIDX(dim-1-j, i, dim);
+            dst[dd] = src[sd];
+            dst[dd + 1] = src[sd + dim];
+            dst[dd + 2] = src[sd + dim * 2];
+            dst[dd + 3] = src[sd + dim * 3];
+            dst[dd + 4] = src[sd + dim * 4];
+            dst[dd + 5] = src[sd + dim * 5];
+            dst[dd + 6] = src[sd + dim * 6];
+            dst[dd + 7] = src[sd + dim * 7];
+        }
+    }
 }
 
 /*********************************************************************
@@ -62,6 +100,8 @@ void register_rotate_functions()
 {
     add_rotate_function(&naive_rotate, naive_rotate_descr);   
     add_rotate_function(&rotate, rotate_descr);   
+    add_rotate_function(&rotate2, rotate_descr);  
+    add_rotate_function(&rotate3, rotate_descr); 
     /* ... Register additional test functions here */
 }
 
@@ -160,12 +200,62 @@ void naive_smooth(int dim, pixel *src, pixel *dst)
  * smooth - Your current working version of smooth. 
  * IMPORTANT: This is the version you will be graded on
  */
+static void set_corner(int cc, pixel *src, pixel *dst, int a1, int a2, int a3){
+    dst[cc].blue = (src[cc].blue+src[a1].blue+src[a2].blue+src[a3].blue) >> 2;
+    dst[cc].green = (src[cc].green+src[a1].green+src[a2].green+src[a3].green) >> 2;
+    dst[cc].red = (src[cc].red+src[a1].red+src[a2].red+src[a3].red) >> 2;
+}
+static void set_top(int dim, pixel *src, pixel *dst, int j){
+    dst[j].blue = (src[j].blue+src[j+dim].blue+src[j-1].blue+src[j+1].blue+src[j+dim-1].blue+src[j+dim+1].blue)/6;
+    dst[j].green = (src[j].green+src[j+dim].green+src[j-1].green+src[j+1].green+src[j+dim-1].green+src[j+dim+1].green)/6;
+    dst[j].red = (src[j].red+src[j+dim].red+src[j-1].red+src[j+1].red+src[j+dim-1].red+src[j+dim+1].red)/6;
+}
+static void set_bottom(int dim, pixel *src, pixel *dst, int j){
+    dst[j].blue = (src[j].blue+src[j-dim].blue+src[j-1].blue+src[j+1].blue+src[j-dim-1].blue+src[j-dim+1].blue)/6;
+    dst[j].green = (src[j].green+src[j-dim].green+src[j-1].green+src[j+1].green+src[j-dim-1].green+src[j-dim+1].green)/6;
+    dst[j].red = (src[j].red+src[j-dim].red+src[j-1].red+src[j+1].red+src[j-dim-1].red+src[j-dim+1].red)/6;
+}
+static void set_left(int dim, pixel *src, pixel *dst, int i){
+    dst[i].blue = (src[i].blue+src[i-dim].blue+src[i-dim+1].blue+src[i+1].blue+src[i+dim].blue+src[i+dim+1].blue)/6;
+    dst[i].green = (src[i].green+src[i-dim].green+src[i-dim+1].green+src[i+1].green+src[i+dim].green+src[i+dim+1].green)/6;
+    dst[i].red = (src[i].red+src[i-dim].red+src[i-dim+1].red+src[i+1].red+src[i+dim].red+src[i+dim+1].red)/6;
+}
+static void set_right(int dim, pixel *src, pixel *dst, int i){
+    dst[i].blue = (src[i].blue+src[i-dim].blue+src[i-dim-1].blue+src[i-1].blue+src[i+dim].blue+src[i+dim-1].blue)/6;
+    dst[i].green = (src[i].green+src[i-dim].green+src[i-dim-1].green+src[i-1].green+src[i+dim].green+src[i+dim-1].green)/6;
+    dst[i].red = (src[i].red+src[i-dim].red+src[i-dim-1].red+src[i-1].red+src[i+dim].red+src[i+dim-1].red)/6;
+}
+static void set_in(int dim, pixel *src, pixel *dst, int k){
+    dst[k].blue = (src[k].blue+src[k-1].blue+src[k+1].blue+src[k+dim-1].blue+src[k+dim].blue+src[k+dim+1].blue+src[k-dim-1].blue+src[k-dim].blue+src[k-dim+1].blue)/9;
+    dst[k].green = (src[k].green+src[k-1].green+src[k+1].green+src[k+dim-1].green+src[k+dim].green+src[k+dim+1].green+src[k-dim-1].green+src[k-dim].green+src[k-dim+1].green)/9;
+    dst[k].red = (src[k].red+src[k-1].red+src[k+1].red+src[k+dim-1].red+src[k+dim].red+src[k+dim+1].red+src[k-dim-1].red+src[k-dim].red+src[k-dim+1].red)/9;
+}
+/*
+ * smooth - Your current working version of smooth. 
+ * IMPORTANT: This is the version you will be graded on
+ */
 char smooth_descr[] = "smooth: Current working version";
 void smooth(int dim, pixel *src, pixel *dst) 
 {
-    naive_smooth(dim, src, dst);
+    // 处理四个角
+    set_corner(0, src, dst, 1, dim, dim+1);
+    set_corner(dim-1, src, dst, dim-2, dim+dim-2, dim+dim-1);
+    set_corner(RIDX(dim-1, 0, dim), src, dst, RIDX(dim-1, 1, dim), RIDX(dim-2, 0, dim), RIDX(dim-2, 1, dim));
+    set_corner(RIDX(dim-1, dim-1, dim), src, dst, RIDX(dim-1, dim-2, dim), RIDX(dim-2, dim-2, dim), RIDX(dim-2, dim-1, dim));
+    // 处理四个边
+    for(int j = 1; j <= dim-2; j++){
+        set_top(dim, src, dst, j);
+        set_bottom(dim, src, dst, dim*dim-dim+j);
+        set_left(dim, src, dst, j*dim);
+        set_right(dim, src, dst, j*dim+dim-1);
+    }
+    // 中间部分
+    for(int i = 1; i <= dim-2; i++){
+        for(int j = 1; j <= dim-2; j++){
+            set_in(dim, src, dst, i*dim+j);
+        }
+    }    
 }
-
 
 /********************************************************************* 
  * register_smooth_functions - Register all of your different versions
@@ -176,8 +266,8 @@ void smooth(int dim, pixel *src, pixel *dst)
  *********************************************************************/
 
 void register_smooth_functions() {
-    add_smooth_function(&smooth, smooth_descr);
     add_smooth_function(&naive_smooth, naive_smooth_descr);
+    add_smooth_function(&smooth, smooth_descr);
     /* ... Register additional test functions here */
 }
 
