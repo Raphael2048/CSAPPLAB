@@ -54,7 +54,7 @@ team_t team = {
 #define PACK(size, alloc) ((size) | (alloc))
 
 #define GET(p)      (*(unsigned int*)(p))
-#define PUT(p, val) (*(unsigned int*)(p) = (val))
+#define PUT(p, val) (*(unsigned int*)(p) = (unsigned int)(val))
 
 // read size and allocated fields
 #define GET_SIZE(p)  (GET(p) & ~0x7)
@@ -64,11 +64,21 @@ team_t team = {
 #define HDRP(bp) ((char *)(bp) - WSIZE)
 #define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
 
-// given block ptr, get next and previois blocks
+// given block ptr, get next and previous blocks
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
+// given free block ptr, get next and previous free blocks offset
+#define PRED_PTR(bp) (char *)(bp)
+#define SUCC_PTR(bp) ((char *)(bp) + WSIZE)
+
+#define PRED(bp) (char*)(*((unsigned int*)bp))
+#define SUCC(bp) (char*)(*((unsigned int*)(bp) + 1))
+
+#define DEBUG 0
+
 static char* heap_listp;
+static char* free_block_listp;
 
 static void *coalesce(void *bp)
 {
@@ -82,11 +92,24 @@ static void *coalesce(void *bp)
         return bp;
     }
     else if(prev_alloc && !next_alloc) {
+        char* next_succ = SUCC(NEXT_BLKP(bp));
+        if(next_succ) {
+            PUT(PRED_PTR(next_succ), bp);
+        }
+        PUT(SUCC_PTR(bp), next_succ);
+
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size, 0));
     }
     else if(!prev_alloc && next_alloc) {
+
+        char * succ = SUCC(bp);
+        if(succ) {
+            PUT(PRED_PTR(succ), PREV_BLKP(bp));
+        }
+        PUT(SUCC_PTR(PREV_BLKP(bp)), succ);
+
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -94,6 +117,12 @@ static void *coalesce(void *bp)
     }
     else
     {
+        char* next_succ = SUCC(NEXT_BLKP(bp));
+        if(next_succ) {
+            PUT(PRED_PTR(next_succ), PREV_BLKP(bp));
+        }
+        PUT(SUCC_PTR(PREV_BLKP(bp)), next_succ);
+
         size +=  GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
         PUT(FTRP(PREV_BLKP(bp)), PACK(size, 0));
@@ -115,42 +144,86 @@ static void* extend_heap(size_t words)
     PUT(FTRP(bp), PACK(size, 0));
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
 
+    if(free_block_listp == NULL) {
+        free_block_listp = bp;
+        PUT(PRED_PTR(bp), NULL);
+        PUT(SUCC_PTR(bp), NULL);
+    } else {
+        for(void*p = free_block_listp;; p = SUCC(p)) {
+            if(SUCC(p) == NULL) {
+                PUT(SUCC_PTR(p), bp);
+                PUT(PRED_PTR(bp), p);
+                PUT(SUCC_PTR(bp), NULL);
+                break;
+            }
+        }
+    }
+
     return coalesce(bp);
 }
 
-// static void print_info()
-// {
-//     for(void *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-//         printf("FROM:%x, SIZE:%x/%d, MALLOC:%d\n", (int)bp, GET_SIZE(HDRP(bp)), GET_SIZE(HDRP(bp)), GET_ALLOC(HDRP(bp)));
-//     }
-//     printf("=================\n");
-// }
+static void print_info()
+{
+#if DEBUG
+    if(free_block_listp != NULL) {
+        if(PRED(free_block_listp)) {
+            abort();
+        }
+    }
+    for(void *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        printf("FROM:%x, SIZE:%x/%d, MALLOC:%d\n", (int)bp, GET_SIZE(HDRP(bp)), GET_SIZE(HDRP(bp)), GET_ALLOC(HDRP(bp)));
+    }
+    printf("=================\n");
+
+     for(void *bp = free_block_listp; bp != NULL; bp = SUCC(bp)) {
+        printf("FROM:%x, SIZE:%x/%d, MALLOC:%d\n", (int)bp, GET_SIZE(HDRP(bp)), GET_SIZE(HDRP(bp)), GET_ALLOC(HDRP(bp)));
+    }
+    printf("~~~~~~~~~~~~~~~~~~\n~~~~~~~~~~~~~~~~~~\n");
+#endif
+}
 
 static void *find_fit(size_t asize)
 {
     // print_info();
-    for(void *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+    // for(void *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+    //     if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+    //         return bp;
+    //     }
+    // }
+
+    for(void * bp = free_block_listp; bp; bp = SUCC(bp)) {
+        if (asize <= GET_SIZE(HDRP(bp))) {
             return bp;
         }
     }
     return NULL;
 }
 
-static void place(void * bp, size_t asize)
+static void* place(void * bp, size_t asize)
 {
     size_t csize = GET_SIZE(HDRP(bp));
     if((csize - asize) >= (2 * DSIZE)) {
-        PUT(HDRP(bp), PACK(asize, 1));
-        PUT(FTRP(bp), PACK(asize, 1));
-        bp = NEXT_BLKP(bp);
         PUT(HDRP(bp), PACK(csize-asize, 0));
         PUT(FTRP(bp), PACK(csize-asize, 0));
+        bp = NEXT_BLKP(bp);
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
     } 
     else {
         PUT(HDRP(bp), PACK(csize, 1));
         PUT(FTRP(bp), PACK(csize, 1));
+
+        if(PRED(bp) != NULL) {
+            PUT(SUCC_PTR(PRED(bp)), SUCC(bp));
+        } else {
+            free_block_listp = SUCC(bp);
+        }
+
+        if(SUCC(bp) != NULL) {
+            PUT(PRED_PTR(SUCC(bp)), PRED(bp));
+        }
     }
+    return bp;
 }
 
 
@@ -168,9 +241,15 @@ int mm_init(void)
 
     heap_listp += (2*WSIZE);
 
+    free_block_listp = NULL;
+
+    print_info();
+
     if(extend_heap(CHUNKSIZE / WSIZE) == NULL) {
         return -1;
     }
+
+    print_info();
 
     return 0;
 }
@@ -182,7 +261,7 @@ int mm_init(void)
 void *mm_malloc(size_t size)
 {
 
-    // print_info();
+    print_info();
     size_t asize;
     size_t extendsize;
     char *bp;
@@ -197,7 +276,7 @@ void *mm_malloc(size_t size)
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
 
     if ((bp = find_fit(asize)) != NULL) {
-        place(bp, asize);
+        bp = place(bp, asize);
         return bp;
     }
 
@@ -206,7 +285,9 @@ void *mm_malloc(size_t size)
     extendsize = MAX(asize, CHUNKSIZE);
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
         return NULL;
-    place(bp, asize);
+    bp = place(bp, asize);
+
+    print_info();
     return bp;
 }
 
@@ -215,13 +296,42 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *bp)
 {
-    // print_info();
+    print_info();
     size_t size = GET_SIZE(HDRP(bp));
 
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
 
+    if(free_block_listp == NULL) {
+        free_block_listp = bp;
+        PUT(SUCC_PTR(bp), NULL);
+        PUT(PRED_PTR(bp), NULL);
+    } else {
+        if(free_block_listp > bp) {
+            PUT(PRED_PTR(bp), NULL);
+            PUT(SUCC_PTR(bp), free_block_listp);
+            PUT(PRED_PTR(free_block_listp), bp);
+            free_block_listp = bp;
+        } else {
+            for(void *p = PREV_BLKP(bp);; p = PREV_BLKP(p)) {
+                if(GET_ALLOC(FTRP(p)) == 0) {
+                    PUT(SUCC_PTR(bp), SUCC(p));
+                    if(SUCC(p)) {
+                        PUT(PRED_PTR(SUCC(p)), bp);
+                    }
+                    PUT(SUCC_PTR(p), bp);
+                    PUT(PRED_PTR(bp), p);
+                    break;
+                }
+            }
+        }
+    }
+
+    print_info();
+
     coalesce(bp);
+
+    print_info();
 }
 
 /*
@@ -247,6 +357,23 @@ void *mm_realloc(void *ptr, size_t size)
                     oldsize += DSIZE;
                     PUT(HDRP(ptr), PACK(oldsize, 1));
                     PUT(FTRP(ptr), PACK(oldsize, 1));
+
+                    if(free_block_listp > ptr) {
+                        free_block_listp = SUCC(bp);
+                        if(free_block_listp != NULL) {
+                            PUT(PRED_PTR(free_block_listp), NULL);
+                        }
+                    } else {
+                        for(void* pp = PREV_BLKP(ptr);; pp = PREV_BLKP(pp)) {
+                            if(!GET_ALLOC(HDRP(pp))) {
+                                PUT(SUCC_PTR(pp), SUCC(bp));
+                                if(SUCC(bp)) {
+                                    PUT(PRED_PTR(SUCC(bp)), pp);
+                                }
+                                break;
+                            }
+                        }
+                    }
                     return ptr;
                 }
             }
