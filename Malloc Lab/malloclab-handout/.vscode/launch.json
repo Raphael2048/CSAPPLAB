@@ -1,0 +1,29 @@
+{
+    // 更多调试设置参考：https://code.visualstudio.com/docs/cpp/launch-json-reference
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/mdriver",
+            "args": ["-f", "traces/realloc2-bal.rep"],
+            // "args": ["-t", "traces"],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "preLaunchTask": "Build For Debug",
+            "linux": {
+                "MIMode": "gdb",
+                "miDebuggerPath": "/usr/bin/gdb"
+            },
+            "osx": {
+                "MIMode": "lldb"
+            },
+            "windows": {
+                "MIMode": "gdb",
+                "miDebuggerPath": "C:\\Softwares\\MinGW64\\bin\\gdb.exe"
+            }
+        }
+    ]
+}

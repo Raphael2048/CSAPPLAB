@@ -1,0 +1,25 @@
+{
+    // 更多任务设置参考：https://go.microsoft.com/fwlink/?LinkId=733558
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build For Debug",
+            "type": "cppbuild",
+            "command": "make",
+            "args": [
+                "CFLAGS=-m32 -g -O0", // -g 参数会将调试信息编译到可执行程序中
+                "CXXFLAGS=-g"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+        }
+    ]
+}
